@@ -1,0 +1,3 @@
+# Force LF on all text files so shell scripts run on Linux regardless of clone OS
+* text=auto eol=lf
+*.sh text eol=lf

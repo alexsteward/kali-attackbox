@@ -1,0 +1,14 @@
+# Runtime / local artifacts — never commit these
+*.log
+kali-attackbox-setup.log
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+*.swp
+*~
+.vscode/
+.idea/
