@@ -114,6 +114,23 @@ A few notes on the less-obvious ones:
 
 ---
 
+## Extras
+
+`scripts/portscan.sh` — a two-stage nmap helper: a fast full TCP port sweep
+(`-p-`), then a service + default-script scan (`-sV -sC`) against only the ports
+that came back open.
+
+```bash
+sudo scripts/portscan.sh 10.10.10.5
+sudo RATE=5000 scripts/portscan.sh 10.10.10.5     # faster sweep
+sudo UDP=1 scripts/portscan.sh 10.10.10.5         # also scan top-100 UDP ports
+```
+
+Handles multiple targets and saves normal/XML/greppable output per target into a
+timestamped folder.
+
+---
+
 ## Troubleshooting
 
 **A `dev` extra failed (dotnet / PowerShell / Sublime / Chrome).**
