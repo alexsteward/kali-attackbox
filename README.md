@@ -60,7 +60,7 @@ list. Full detail log: `/var/log/kali-attackbox-setup.log`.
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-username>/kali-attackbox.git
+git clone https://github.com/alexsteward/kali-attackbox.git
 cd kali-attackbox
 chmod +x setup.sh
 sudo ./setup.sh
