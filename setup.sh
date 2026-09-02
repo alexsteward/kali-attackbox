@@ -459,16 +459,29 @@ EOF
 
 mod_veracrypt(){
   command -v veracrypt >/dev/null && { ok "veracrypt already present"; return 0; }
-  # Not in Kali repos - pull the official Debian .deb (bump VER when a new release drops)
-  local VER="1.26.24"
-  for base in "Debian-12" "Debian-11"; do
-    local url="https://launchpad.net/veracrypt/trunk/${VER}/+download/veracrypt-${VER}-${base}-amd64.deb"
-    if curl -fsSL "$url" -o /tmp/veracrypt.deb 2>>"$LOG" && [ -s /tmp/veracrypt.deb ]; then
-      if apt-get install -y /tmp/veracrypt.deb >>"$LOG" 2>&1; then
-        ok "VeraCrypt ${VER} installed"; rm -f /tmp/veracrypt.deb; return 0
+  # Not in Kali repos - fetch the official .deb. Discover the latest version from
+  # VeraCrypt's GitHub, then try that release asset and Launchpad (with fallbacks).
+  local deb=/tmp/veracrypt.deb api="https://api.github.com/repos/veracrypt/VeraCrypt/releases/latest"
+  local json ver="" asset="" c v candidates=()
+  json="$(curl -fsSL "$api" 2>>"$LOG" || true)"
+  ver="$(printf '%s' "$json" | grep -oP '"tag_name":\s*"\K[^"]+' | sed 's/^VeraCrypt_//; s/^v//')"
+  asset="$(printf '%s' "$json" | grep -oP 'https://[^"]*Debian-1[12]-amd64\.deb' | grep -vi console | sort -r | head -1)"
+  [ -n "$asset" ] && candidates+=("$asset")
+  for v in "$ver" 1.26.20 1.26.15 1.26.7; do
+    [ -n "$v" ] || continue
+    candidates+=("https://launchpad.net/veracrypt/trunk/${v}/+download/veracrypt-${v}-Debian-12-amd64.deb")
+    candidates+=("https://launchpad.net/veracrypt/trunk/${v}/+download/veracrypt-${v}-Debian-11-amd64.deb")
+  done
+  for c in "${candidates[@]}"; do
+    rm -f "$deb"
+    if curl -fsSL "$c" -o "$deb" 2>>"$LOG" && [ -s "$deb" ] \
+       && file "$deb" 2>/dev/null | grep -qi 'debian binary package'; then
+      if apt-get install -y "$deb" >>"$LOG" 2>&1; then
+        ok "VeraCrypt installed ($(basename "$c"))"; rm -f "$deb"; return 0
       fi
     fi
   done
+  rm -f "$deb"
   err "VeraCrypt auto-install failed - grab the .deb from https://veracrypt.io/en/Downloads.html"
   return 1
 }
