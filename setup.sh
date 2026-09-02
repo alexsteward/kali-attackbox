@@ -21,12 +21,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export DEBIAN_FRONTEND=noninteractive
 : > "$LOG"
 
-MODULES=(base shell dev docker networking offensive audit desktop remote burp veracrypt vm)
+MODULES=(base shell dev docker networking offensive wintools audit desktop remote burp veracrypt vm)
 declare -A LABELS=(
   [base]="System base + upgrade" [shell]="Shell + aliases"
   [dev]="Dev toolchain" [docker]="Docker engine"
   [networking]="Network utilities" [offensive]="Offensive arsenal"
-  [audit]="Sudo I/O audit log" [desktop]="Desktop tweaks"
+  [wintools]="Windows target tools" [audit]="Sudo I/O audit log" [desktop]="Desktop tweaks"
   [remote]="Remote access (xrdp)" [burp]="Burp Suite"
   [veracrypt]="VeraCrypt" [vm]="VM guest agents"
 )
@@ -307,32 +307,93 @@ mod_offensive(){
   # Kali ships most of these; ensure the key set + fill gaps.
   apt_install hashcat john hydra ffuf sqlmap wpscan nuclei seclists wordlists \
               responder mitm6 crackmapexec netexec impacket-scripts \
-              enum4linux nbtscan onesixtyone snmp smbclient ldap-utils \
-              exiftool ruby gowitness python3-pypykatz \
+              enum4linux enum4linux-ng nbtscan onesixtyone snmp smbclient ldap-utils \
+              socat chisel evil-winrm exiftool ruby gowitness python3-pypykatz \
               bloodhound neo4j
   [ -f /usr/share/wordlists/rockyou.txt.gz ] && gunzip -kf /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true
   as_user pipx install password-stretcher >>"$LOG" 2>&1 || warn "password-stretcher skipped"
+  as_user pipx install bbot >>"$LOG" 2>&1 && ok "pipx: bbot" || warn "bbot skipped"
+  as_user pipx install bloodhound >>"$LOG" 2>&1 && ok "pipx: bloodhound-python (Linux collector)" || warn "bloodhound-python skipped"
   if ! command -v gowitness >/dev/null; then
     as_user env GOBIN=/usr/local/bin go install github.com/sensepost/gowitness@latest >>"$LOG" 2>&1 \
       && ok "gowitness (go) installed" || warn "gowitness skipped"
+  fi
+  if ! command -v kerbrute >/dev/null; then
+    as_user env GOBIN=/usr/local/bin go install github.com/ropnop/kerbrute@latest >>"$LOG" 2>&1 \
+      && ok "kerbrute installed" || warn "kerbrute skipped"
+  fi
+  if ! command -v chisel >/dev/null; then    # go fallback if apt didn't provide it
+    as_user env GOBIN=/usr/local/bin go install github.com/jpillora/chisel@latest >>"$LOG" 2>&1 \
+      && ok "chisel (go) installed" || warn "chisel skipped"
   fi
   # Neo4j service for BloodHound (Kali-packaged, not dockerized - avoids port clash)
   if systemctl list-unit-files 2>/dev/null | grep -q '^neo4j'; then
     systemctl enable neo4j >>"$LOG" 2>&1 || true
     log "BloodHound: launch from the app menu. Neo4j DB = service 'neo4j' (http://localhost:7474, default neo4j/neo4j - set pw on first login)"
   fi
-  # A few useful public repos into ~/git (impacket also available via apt; seclists at /usr/share)
+  # Useful public repos into ~/git (impacket also via apt; seclists at /usr/share)
   as_user mkdir -p "$TARGET_HOME/git"
-  local names=(impacket petitpotam pre2k)
-  local urls=(https://github.com/fortra/impacket https://github.com/topotam/PetitPotam https://github.com/garrettfoster13/pre2k)
+  local names=(impacket petitpotam pre2k windapsearch)
+  local urls=(https://github.com/fortra/impacket https://github.com/topotam/PetitPotam https://github.com/garrettfoster13/pre2k https://github.com/ropnop/windapsearch)
   local k=0
   for name in "${names[@]}"; do
     local d="$TARGET_HOME/git/$name"
-    if [ -d "$d/.git" ]; then :; else
+    if [ ! -d "$d/.git" ]; then
       as_user git clone --depth 1 "${urls[k]}" "$d" >>"$LOG" 2>&1 && ok "cloned $name" || warn "clone $name failed"
     fi
     k=$((k+1))
   done
+  # dnscat2 (DNS tunnelling) - clone + build the client
+  if [ ! -d "$TARGET_HOME/git/dnscat2/.git" ]; then
+    if as_user git clone --depth 1 https://github.com/iagox86/dnscat2 "$TARGET_HOME/git/dnscat2" >>"$LOG" 2>&1; then
+      as_user make -C "$TARGET_HOME/git/dnscat2/client" >>"$LOG" 2>&1 \
+        && ok "dnscat2 client built (~/git/dnscat2/client/dnscat)" || warn "dnscat2 cloned; client build failed"
+    else warn "dnscat2 clone failed"; fi
+  fi
+  return 0
+}
+
+mod_wintools(){
+  # Stage Windows target-side tools into ~/tools/windows for use during AUTHORIZED
+  # engagements. Sources are official only. These are NOT executed on the box.
+  local WT="$TARGET_HOME/tools/windows"
+  as_user mkdir -p "$WT"
+
+  # PowerView (PowerSploit) — ready-to-use PowerShell
+  if as_user bash -c "curl -fsSL https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Recon/PowerView.ps1 -o '$WT/PowerView.ps1'" >>"$LOG" 2>&1; then
+    ok "staged PowerView.ps1"; else warn "PowerView download failed"; fi
+
+  # DomainPasswordSpray — ready-to-use PowerShell
+  if [ ! -d "$WT/DomainPasswordSpray/.git" ]; then
+    as_user git clone --depth 1 https://github.com/dafthack/DomainPasswordSpray "$WT/DomainPasswordSpray" >>"$LOG" 2>&1 \
+      && ok "staged DomainPasswordSpray" || warn "DomainPasswordSpray clone failed"
+  fi
+
+  # Rubeus — source (GhostPack ships no official binaries; compile with .NET)
+  if [ ! -d "$WT/Rubeus/.git" ]; then
+    as_user git clone --depth 1 https://github.com/GhostPack/Rubeus "$WT/Rubeus" >>"$LOG" 2>&1 \
+      && ok "staged Rubeus source (compile on Windows/.NET)" || warn "Rubeus clone failed"
+  fi
+
+  # Mimikatz — official release zip
+  local mz; mz="$(curl -fsSL https://api.github.com/repos/gentilkiwi/mimikatz/releases/latest 2>>"$LOG" | grep -oP 'https://[^"]*mimikatz_trunk\.zip' | head -1)"
+  if [ -n "$mz" ]; then
+    as_user bash -c "curl -fsSL '$mz' -o '$WT/mimikatz.zip' && unzip -o '$WT/mimikatz.zip' -d '$WT/mimikatz' >/dev/null && rm -f '$WT/mimikatz.zip'" >>"$LOG" 2>&1 \
+      && ok "staged mimikatz (official release)" || warn "mimikatz download failed"
+  else warn "mimikatz release URL not found"; fi
+
+  # SharpHound — official collector release
+  local sh; sh="$(curl -fsSL https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest 2>>"$LOG" | grep -oP 'https://[^"]*SharpHound[^"]*\.zip' | grep -vi debug | head -1)"
+  if [ -n "$sh" ]; then
+    as_user bash -c "curl -fsSL '$sh' -o '$WT/sharphound.zip' && unzip -o '$WT/sharphound.zip' -d '$WT/SharpHound' >/dev/null && rm -f '$WT/sharphound.zip'" >>"$LOG" 2>&1 \
+      && ok "staged SharpHound (official collector)" || warn "SharpHound download failed"
+  else warn "SharpHound release URL not found"; fi
+
+  # Sysinternals PsExec — Microsoft official
+  if as_user bash -c "curl -fsSL https://download.sysinternals.com/files/PSTools.zip -o '$WT/PSTools.zip' && unzip -o '$WT/PSTools.zip' -d '$WT/PSTools' >/dev/null && rm -f '$WT/PSTools.zip'" >>"$LOG" 2>&1; then
+    ok "staged Sysinternals PsExec"; else warn "PsExec download failed"; fi
+
+  log "Windows tools staged in $WT (for authorized engagement use)"
   return 0
 }
 
