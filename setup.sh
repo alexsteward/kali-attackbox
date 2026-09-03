@@ -234,18 +234,37 @@ EOF
 }
 
 mod_dev(){
-  apt_install golang-go pipx jq
-  # Microsoft repo → PowerShell + .NET SDK (not in Kali's own repos)
-  if [ ! -f /etc/apt/sources.list.d/microsoft-prod.list ]; then
-    ( curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -o /tmp/ms.deb \
-      && dpkg -i /tmp/ms.deb && apt-get update ) >>"$LOG" 2>&1 || warn "Microsoft repo add failed (dotnet/pwsh may be skipped)"
+  apt_install golang-go pipx jq nodejs npm
+  # .NET SDK 8 via the official installer (distro-agnostic; MS apt repo is unreliable on Kali)
+  if ! command -v dotnet >/dev/null; then
+    if curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+       && bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /opt/dotnet >>"$LOG" 2>&1; then
+      ln -sf /opt/dotnet/dotnet /usr/local/bin/dotnet; ok ".NET SDK 8 installed (/opt/dotnet)"
+    else warn ".NET SDK install failed"; fi
+    rm -f /tmp/dotnet-install.sh
   fi
-  apt_install dotnet-sdk-8.0 powershell
+  # PowerShell via the official GitHub .deb (latest release)
+  if ! command -v pwsh >/dev/null; then
+    local psurl; psurl="$(curl -fsSL https://api.github.com/repos/PowerShell/PowerShell/releases/latest 2>>"$LOG" | grep -oP 'https://[^"]*/powershell_[^"]*deb_amd64\.deb' | head -1)"
+    if [ -n "$psurl" ] && curl -fsSL "$psurl" -o /tmp/powershell.deb 2>>"$LOG" && apt-get install -y /tmp/powershell.deb >>"$LOG" 2>&1; then
+      ok "PowerShell installed"; else warn "PowerShell install failed"; fi
+    rm -f /tmp/powershell.deb
+  fi
   # python tooling via pipx (Kali is PEP-668 externally-managed; no python3-pipenv pkg)
   as_user pipx ensurepath >>"$LOG" 2>&1 || true
   for t in poetry pipenv ansible-runner; do
     as_user pipx install "$t" >>"$LOG" 2>&1 && ok "pipx: $t" || warn "pipx $t failed"
   done
+  # Claude Code CLI (Anthropic) — native installer (per-user), npm fallback
+  if ! as_user bash -c '[ -x "$HOME/.local/bin/claude" ] || command -v claude >/dev/null 2>&1'; then
+    if as_user bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >>"$LOG" 2>&1; then
+      ok "Claude Code installed (native → ~/.local/bin/claude)"
+    elif command -v npm >/dev/null && npm install -g @anthropic-ai/claude-code >>"$LOG" 2>&1; then
+      ok "Claude Code installed (npm global)"
+    else
+      warn "Claude Code skipped — run: curl -fsSL https://claude.ai/install.sh | bash"
+    fi
+  fi
   # Sublime (best-effort)
   if ! command -v subl >/dev/null; then
     ( curl -fsSL https://download.sublimetext.com/sublimehq-pub.gpg | gpg --dearmor -o /usr/share/keyrings/sublimehq.gpg \
@@ -465,12 +484,15 @@ mod_veracrypt(){
   local json ver="" asset="" c v candidates=()
   json="$(curl -fsSL "$api" 2>>"$LOG" || true)"
   ver="$(printf '%s' "$json" | grep -oP '"tag_name":\s*"\K[^"]+' | sed 's/^VeraCrypt_//; s/^v//')"
-  asset="$(printf '%s' "$json" | grep -oP 'https://[^"]*Debian-1[12]-amd64\.deb' | grep -vi console | sort -r | head -1)"
-  [ -n "$asset" ] && candidates+=("$asset")
-  for v in "$ver" 1.26.20 1.26.15 1.26.7; do
+  local gh="https://github.com/veracrypt/VeraCrypt/releases/download" lp="https://launchpad.net/veracrypt/trunk" k b
+  for v in "$ver" 1.26.29 1.26.20 1.26.7; do
     [ -n "$v" ] || continue
-    candidates+=("https://launchpad.net/veracrypt/trunk/${v}/+download/veracrypt-${v}-Debian-12-amd64.deb")
-    candidates+=("https://launchpad.net/veracrypt/trunk/${v}/+download/veracrypt-${v}-Debian-11-amd64.deb")
+    for k in "" "console-"; do            # GUI build first, then console (minimal deps)
+      for b in Debian-12 Debian-11; do
+        candidates+=("$gh/VeraCrypt_${v}/veracrypt-${k}${v}-${b}-amd64.deb")
+        candidates+=("$lp/${v}/+download/veracrypt-${k}${v}-${b}-amd64.deb")
+      done
+    done
   done
   for c in "${candidates[@]}"; do
     rm -f "$deb"
