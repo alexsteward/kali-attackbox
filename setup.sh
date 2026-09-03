@@ -488,7 +488,7 @@ mod_veracrypt(){
   for v in "$ver" 1.26.29 1.26.20 1.26.7; do
     [ -n "$v" ] || continue
     for k in "" "console-"; do            # GUI build first, then console (minimal deps)
-      for b in Debian-12 Debian-11; do
+      for b in Debian-13 Debian-12 Debian-11; do   # Kali is now Debian 13 (Trixie)
         candidates+=("$gh/VeraCrypt_${v}/veracrypt-${k}${v}-${b}-amd64.deb")
         candidates+=("$lp/${v}/+download/veracrypt-${k}${v}-${b}-amd64.deb")
       done
