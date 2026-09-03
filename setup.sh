@@ -237,16 +237,16 @@ mod_dev(){
   apt_install golang-go pipx jq nodejs npm
   # .NET SDK 8 via the official installer (distro-agnostic; MS apt repo is unreliable on Kali)
   if ! command -v dotnet >/dev/null; then
-    if curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
-       && bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /opt/dotnet >>"$LOG" 2>&1; then
+    if curl -fsSL --max-time 60 https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+       && timeout 900 bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /opt/dotnet </dev/null >>"$LOG" 2>&1; then
       ln -sf /opt/dotnet/dotnet /usr/local/bin/dotnet; ok ".NET SDK 8 installed (/opt/dotnet)"
-    else warn ".NET SDK install failed"; fi
+    else warn ".NET SDK install failed/timed out"; fi
     rm -f /tmp/dotnet-install.sh
   fi
   # PowerShell via the official GitHub .deb (latest release)
   if ! command -v pwsh >/dev/null; then
-    local psurl; psurl="$(curl -fsSL https://api.github.com/repos/PowerShell/PowerShell/releases/latest 2>>"$LOG" | grep -oP 'https://[^"]*/powershell_[^"]*deb_amd64\.deb' | head -1)"
-    if [ -n "$psurl" ] && curl -fsSL "$psurl" -o /tmp/powershell.deb 2>>"$LOG" && apt-get install -y /tmp/powershell.deb >>"$LOG" 2>&1; then
+    local psurl; psurl="$(curl -fsSL --max-time 30 https://api.github.com/repos/PowerShell/PowerShell/releases/latest 2>>"$LOG" | grep -oP 'https://[^"]*/powershell_[^"]*deb_amd64\.deb' | head -1)"
+    if [ -n "$psurl" ] && curl -fsSL --max-time 180 "$psurl" -o /tmp/powershell.deb 2>>"$LOG" && apt-get install -y /tmp/powershell.deb >>"$LOG" 2>&1; then
       ok "PowerShell installed"; else warn "PowerShell install failed"; fi
     rm -f /tmp/powershell.deb
   fi
@@ -255,11 +255,12 @@ mod_dev(){
   for t in poetry pipenv ansible-runner; do
     as_user pipx install "$t" >>"$LOG" 2>&1 && ok "pipx: $t" || warn "pipx $t failed"
   done
-  # Claude Code CLI (Anthropic) — native installer (per-user), npm fallback
+  # Claude Code CLI (Anthropic) — native installer (per-user), npm fallback.
+  # stdin from /dev/null + timeouts so the installer can never hang the run.
   if ! as_user bash -c '[ -x "$HOME/.local/bin/claude" ] || command -v claude >/dev/null 2>&1'; then
-    if as_user bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >>"$LOG" 2>&1; then
+    if as_user bash -c 'curl -fsSL --max-time 120 https://claude.ai/install.sh | timeout 240 bash' </dev/null >>"$LOG" 2>&1; then
       ok "Claude Code installed (native → ~/.local/bin/claude)"
-    elif command -v npm >/dev/null && npm install -g @anthropic-ai/claude-code >>"$LOG" 2>&1; then
+    elif command -v npm >/dev/null && timeout 300 npm install -g @anthropic-ai/claude-code </dev/null >>"$LOG" 2>&1; then
       ok "Claude Code installed (npm global)"
     else
       warn "Claude Code skipped — run: curl -fsSL https://claude.ai/install.sh | bash"
