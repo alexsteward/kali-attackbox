@@ -280,6 +280,23 @@ mod_dev(){
       && apt-get install -y /tmp/chrome.deb ) >>"$LOG" 2>&1 \
       && ok "Google Chrome installed" || { warn "Chrome skipped - installing Chromium"; apt_install chromium; }
   fi
+  # Flameshot — screenshots (handy for reports)
+  apt_install flameshot
+  # Spotify — official apt repo (best-effort; drops its source on failure so apt stays clean)
+  if ! command -v spotify >/dev/null; then
+    if ( curl -fsSL --max-time 30 https://download.spotify.com/debian/pubkey_6224F9941A8AA6D1.gpg | gpg --dearmor -o /usr/share/keyrings/spotify.gpg \
+         && echo "deb [signed-by=/usr/share/keyrings/spotify.gpg] http://repository.spotify.com stable non-free" > /etc/apt/sources.list.d/spotify.list \
+         && apt-get update && apt-get install -y spotify-client ) >>"$LOG" 2>&1; then
+      ok "Spotify installed"
+    else warn "Spotify install skipped"; rm -f /etc/apt/sources.list.d/spotify.list; fi
+  fi
+  # teams-for-linux — unofficial Microsoft Teams client (GitHub .deb)
+  if ! command -v teams-for-linux >/dev/null; then
+    local tfl; tfl="$(curl -fsSL --max-time 30 https://api.github.com/repos/IsmaelMartinez/teams-for-linux/releases/latest 2>>"$LOG" | grep -oP 'https://[^"]*_amd64\.deb' | head -1)"
+    if [ -n "$tfl" ] && curl -fsSL --max-time 180 "$tfl" -o /tmp/tfl.deb 2>>"$LOG" && apt-get install -y /tmp/tfl.deb >>"$LOG" 2>&1; then
+      ok "teams-for-linux installed"; else warn "teams-for-linux install skipped"; fi
+    rm -f /tmp/tfl.deb
+  fi
   return 0
 }
 
