@@ -297,6 +297,21 @@ mod_dev(){
       ok "teams-for-linux installed"; else warn "teams-for-linux install skipped"; fi
     rm -f /tmp/tfl.deb
   fi
+  # VS Code (official direct .deb)
+  if ! command -v code >/dev/null; then
+    if curl -fsSL --max-time 180 "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64" -o /tmp/vscode.deb 2>>"$LOG" \
+       && apt-get install -y /tmp/vscode.deb >>"$LOG" 2>&1; then
+      ok "VS Code installed"; else warn "VS Code install skipped"; fi
+    rm -f /tmp/vscode.deb
+  fi
+  # Signal Desktop (official apt repo; drops its source on failure so apt stays clean)
+  if ! command -v signal-desktop >/dev/null; then
+    if ( curl -fsSL --max-time 30 https://updates.signal.org/desktop/apt/keys.asc | gpg --dearmor -o /usr/share/keyrings/signal-desktop-keyring.gpg \
+         && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main" > /etc/apt/sources.list.d/signal-xenial.list \
+         && apt-get update && apt-get install -y signal-desktop ) >>"$LOG" 2>&1; then
+      ok "Signal Desktop installed"
+    else warn "Signal install skipped"; rm -f /etc/apt/sources.list.d/signal-xenial.list; fi
+  fi
   return 0
 }
 
@@ -452,16 +467,29 @@ EOF
 }
 
 mod_desktop(){
-  as_user bash -c '
-    command -v xfconf-query >/dev/null || exit 0
-    xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/inactivity-on-ac -n -t uint -s 0 2>/dev/null
-    xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/blank-on-ac -n -t int -s 0 2>/dev/null
-    xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-enabled -n -t bool -s false 2>/dev/null
-    xfconf-query -c xfce4-screensaver -p /lock/enabled -n -t bool -s false 2>/dev/null
-  ' >>"$LOG" 2>&1 || true
+  apt_install i3lock i3lock-fancy scrot
+  local uid bus; uid="$(id -u "$TARGET_USER")"; bus="unix:path=/run/user/$uid/bus"
+  xq(){ as_user env DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$bus" xfconf-query "$@"; }
+  if xq -c xfce4-keyboard-shortcuts -l >/dev/null 2>&1; then
+    # no sleep / no auto screen-lock
+    xq -c xfce4-power-manager -p /xfce4-power-manager/inactivity-on-ac -n -t uint -s 0 2>/dev/null || true
+    xq -c xfce4-power-manager -p /xfce4-power-manager/blank-on-ac -n -t int -s 0 2>/dev/null || true
+    xq -c xfce4-power-manager -p /xfce4-power-manager/dpms-enabled -n -t bool -s false 2>/dev/null || true
+    xq -c xfce4-screensaver -p /lock/enabled -n -t bool -s false 2>/dev/null || true
+    # PrtScn -> Flameshot (replaces the default xfce4-screenshooter binding)
+    xq -c xfce4-keyboard-shortcuts -p /commands/custom/Print -r 2>/dev/null || true
+    xq -c xfce4-keyboard-shortcuts -p /commands/custom/Print -n -t string -s "flameshot gui" 2>/dev/null \
+      || xq -c xfce4-keyboard-shortcuts -p /commands/custom/Print -s "flameshot gui" 2>/dev/null || true
+    # Super+L (Framework key) -> i3lock-fancy
+    xq -c xfce4-keyboard-shortcuts -p "/commands/custom/<Super>l" -r 2>/dev/null || true
+    xq -c xfce4-keyboard-shortcuts -p "/commands/custom/<Super>l" -n -t string -s "i3lock-fancy" 2>/dev/null \
+      || xq -c xfce4-keyboard-shortcuts -p "/commands/custom/<Super>l" -s "i3lock-fancy" 2>/dev/null || true
+    ok "Flameshot on PrtScn, i3lock-fancy on Super+L, sleep/auto-lock off"
+  else
+    log "desktop tweaks need an active XFCE session - re-run: sudo ./setup.sh --only desktop"
+  fi
   [ -f /etc/xdg/autostart/light-locker.desktop ] && \
     sed -i '/^Hidden/d; $aHidden=true' /etc/xdg/autostart/light-locker.desktop 2>/dev/null || true
-  ok "sleep/screen-lock disabled (best-effort)"
   return 0
 }
 
