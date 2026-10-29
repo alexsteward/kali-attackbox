@@ -312,6 +312,13 @@ mod_dev(){
       ok "Signal Desktop installed"
     else warn "Signal install skipped"; rm -f /etc/apt/sources.list.d/signal-xenial.list; fi
   fi
+  # Obsidian (official GitHub .deb)
+  if ! command -v obsidian >/dev/null; then
+    local obs; obs="$(curl -fsSL --max-time 30 https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest 2>>"$LOG" | grep -oP '"browser_download_url":\s*"\K[^"]*amd64\.deb' | head -1)"
+    if [ -n "$obs" ] && curl -fsSL --max-time 180 "$obs" -o /tmp/obsidian.deb 2>>"$LOG" && apt-get install -y /tmp/obsidian.deb >>"$LOG" 2>&1; then
+      ok "Obsidian installed"; else warn "Obsidian install skipped"; fi
+    rm -f /tmp/obsidian.deb
+  fi
   return 0
 }
 
