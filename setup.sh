@@ -457,6 +457,22 @@ mod_wintools(){
 }
 
 mod_audit(){
+  # tmux session logging — auto-pipe every pane to ~/tmux-logs (operator activity trail).
+  # Logs capture ALL terminal I/O incl. client data; treat as engagement artifacts.
+  if ! grep -q 'auto session logging' /etc/tmux.conf 2>/dev/null; then
+    cat >> /etc/tmux.conf <<'EOF'
+
+# >>> auto session logging >>>
+set -g history-limit 100000
+set-hook -g session-created    'pipe-pane -o "mkdir -p ~/tmux-logs; cat >> ~/tmux-logs/#{session_name}_w#{window_index}p#{pane_index}_$(date +%Y%m%d_%H%M%S).log"'
+set-hook -g after-new-window   'pipe-pane -o "mkdir -p ~/tmux-logs; cat >> ~/tmux-logs/#{session_name}_w#{window_index}p#{pane_index}_$(date +%Y%m%d_%H%M%S).log"'
+set-hook -g after-split-window 'pipe-pane -o "mkdir -p ~/tmux-logs; cat >> ~/tmux-logs/#{session_name}_w#{window_index}p#{pane_index}_$(date +%Y%m%d_%H%M%S).log"'
+# <<< auto session logging <<<
+EOF
+    ok "tmux session logging enabled (~/tmux-logs/)"
+  fi
+
+  # sudo I/O logging — every privileged command recorded
   cat > /tmp/10-sudo-io <<'EOF'
 Defaults log_output
 Defaults log_input
@@ -470,7 +486,7 @@ EOF
     ok "sudo I/O logging → /var/log/sudo-io"
     rm -f /tmp/10-sudo-io; return 0
   fi
-  err "sudoers validation failed; audit not installed"; rm -f /tmp/10-sudo-io; return 1
+  err "sudoers validation failed; sudo-io not installed"; rm -f /tmp/10-sudo-io; return 1
 }
 
 mod_desktop(){

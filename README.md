@@ -40,7 +40,7 @@ list. Full detail log: `/var/log/kali-attackbox-setup.log`.
 | `networking` | nmap, masscan, zmap, sshuttle, squid (:3128), sshd (root off), freetds, proxychains |
 | `offensive` | Kali arsenal + AD/recon/pivoting — hashcat, ffuf, nuclei, responder, mitm6, NetExec/CME, impacket, enum4linux-ng, kerbrute, evil-winrm, bbot, bloodhound-python, socat, chisel, dnscat2, windapsearch, gowitness; clones impacket / PetitPotam / pre2k into `~/git`; enables Neo4j for BloodHound |
 | `wintools` | Stages **Windows target-side** tools into `~/tools/windows` from official sources: PowerView, DomainPasswordSpray, Rubeus (source), Mimikatz, SharpHound, Sysinternals PsExec |
-| `audit` | Full sudo I/O logging → `/var/log/sudo-io` |
+| `audit` | tmux session logging (every pane → `~/tmux-logs/`) + full sudo I/O logging → `/var/log/sudo-io` |
 | `desktop` | Disables sleep / screen-lock so the box won't nap mid-task (XFCE) |
 | `remote` | xrdp on **tcp/3389**, XFCE session |
 | `burp` | Burp Suite Community (always) + attempts Burp Pro silent install to `/opt/BurpSuitePro` |
